@@ -1,0 +1,133 @@
+---
+title: "Individual Assignment Leaflet"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE)
+library(leaflet)
+library(leaflet.extras)
+library(dplyr)
+library(lubridate)
+library(sp)
+library(rgdal)
+```
+
+## Chernobly Air Concentration 1986
+
+Data set and context provided by: <https://www.kaggle.com/lsind18/chernobyl-data-air-concentration>
+
+### Context 
+The Chernobyl disaster was a nuclear accident that occurred on 26 April 1986 at the No. 4 nuclear reactor in the Chernobyl Nuclear Power Plant, near the city of Pripyat in the north of the Ukrainian SSR. It is considered the worst nuclear disaster in history and is one of only two nuclear energy disasters rated at seven - the maximum severity - on the International Nuclear Event Scale, the other being the 2011 Fukushima Daiichi nuclear disaster in Japan.
+
+### Content
+This dataset presents concentration of Iodine-131 (I-131), Caesium-134 (Cs-134) and Caesium-137 (radiocaesium, Cs-137) as anaerosol particles which were measured in specific location and date.
+On each line, following information is given:
+
+* country code
+* locality name
+* latitude 
+* longitude 
+* date
+* hour of end of sampling 
+* duration
+* I-131 concentration in Bq/m3 (aerosol particles)
+* Cs-134 concentration in Bq/m3 (aerosol particles)
+* Cs-137 concentration in Bq/m3 (aerosol particles)
+
+### Data preparation
+
+#### Load the data set 
+```{r, echo = T, results = 'hide', eval=FALSE}
+Chernobyl <- read.csv("/Users/michellemichalowski/Downloads/CHERNAIR.csv")
+```
+#### Clean the data set 
+```{r, echo = T, results = 'hide', eval=FALSE}
+Chernobyl <- Chernobyl %>%
+                rename(country = PAYS,
+                     country_code = Code,
+                     city = Ville,
+                     Longitude = X,
+                     Latitude = Y,
+                     Iodine_131 = I.131..Bq.m3., 
+                     Caesium_134 = Cs.134..Bq.m3., 
+                     Caesium_137 = Cs.137..Bq.m3.) %>%
+                     mutate(Date = ymd(Date),
+                            country = as.factor(country),
+                            country_code = as.factor(country_code),
+                            city = as.factor(city),
+                            Iodine_131 = as.numeric(Iodine_131),
+                            Caesium_134 = as.numeric(Caesium_134),
+                            Caesium_137 = as.numeric(Caesium_137)) %>% 
+                     select(-End.of.sampling, -Duration.h.min.)
+```
+#### Check for missing values 
+```{r, echo = T, results = 'hide', eval=FALSE}
+apply(Chernobyl, 2, function(x) sum(is.na(x)))
+```
+#### Calculate the mean over the measuring time
+```{r, echo = T, results = 'hide', eval=FALSE}
+Chernobyl_2 <- Chernobyl %>%
+              group_by(city) %>%
+              summarise(mean_Iodine_131 = mean(Iodine_131, na.rm=TRUE),
+                        mean_Caesium_134 = mean(Caesium_134, na.rm=TRUE),
+                        mean_Caesium_137 = mean(Caesium_137, na.rm=TRUE),
+                        Longitude = max(Longitude),
+                        Latitude = max(Latitude))
+```
+
+### In which cities was radiation measured?
+```{r, echo = FALSE, message=FALSE}
+Chernobyl <- read.csv("/Users/michellemichalowski/Downloads/CHERNAIR.csv")
+Chernobyl <- Chernobyl %>%
+                rename(country = PAYS,
+                     country_code = Code,
+                     city = Ville,
+                     Longitude = X,
+                     Latitude = Y,
+                     Iodine_131 = I.131..Bq.m3., 
+                     Caesium_134 = Cs.134..Bq.m3., 
+                     Caesium_137 = Cs.137..Bq.m3.) %>%
+                     mutate(Date = ymd(Date),
+                            country = as.factor(country),
+                            country_code = as.factor(country_code),
+                            city = as.factor(city),
+                            Iodine_131 = as.numeric(Iodine_131),
+                            Caesium_134 = as.numeric(Caesium_134),
+                            Caesium_137 = as.numeric(Caesium_137)) %>% 
+                     select(-End.of.sampling, -Duration.h.min.)
+
+leaflet(Chernobyl) %>% addTiles() %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPulseMarkers(lng = ~Longitude, lat = ~Latitude,
+                  icon = makePulseIcon(heartbeat = 0.2))
+leaflet(Chernobyl) %>% addTiles() %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addMarkers(
+    clusterOptions = markerClusterOptions()
+  ) 
+```
+
+### How strong was the radiation in those cities?
+
+```{r, echo = FALSE, message=FALSE}
+Chernobyl_2 <- Chernobyl %>%
+              group_by(city) %>%
+              summarise(mean_Iodine_131 = mean(Iodine_131, na.rm=TRUE),
+                        mean_Caesium_134 = mean(Caesium_134, na.rm=TRUE),
+                        mean_Caesium_137 = mean(Caesium_137, na.rm=TRUE),
+                        Longitude = max(Longitude),
+                        Latitude = max(Latitude))
+
+leaflet(Chernobyl_2) %>% addTiles() %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addMarkers(lng = ~30, lat = ~51, popup = "Chernobyl") %>%
+  addHeatmap(lng = ~Longitude, lat = ~Latitude, intensity = ~mean_Caesium_137,
+             blur = 40, max = 0.05, radius = 17)
+
+leaflet(Chernobyl_2) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  setView(lng = 10, lat = 51, zoom = 4) %>%
+  addCircleMarkers(lng = Chernobyl_2$Longitude, lat = Chernobyl_2$Latitude, 
+                   weight = Chernobyl_2$mean_Caesium_134*25)
+```
